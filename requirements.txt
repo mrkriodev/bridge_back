@@ -2,3 +2,5 @@ python-dotenv
 web3
 fastapi
 uvicorn
+sqlalchemy
+jsonfy
