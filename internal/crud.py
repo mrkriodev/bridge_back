@@ -90,6 +90,15 @@ def set_issue_status(session, issue_index=-1, direction=SwapDirection.NO_DIRECTI
         session.rollback()
 
 
+def get_issue_adr_amount(session, issue_index=-1, direction=SwapDirection.NO_DIRECTION, status=False):
+    if issue_index == -1:
+        return
+    stmt = select(Issue).where(and_(Issue.id_in_contract == issue_index,
+                                    Issue.direct == direction.value))
+    issue: Issue = session.execute(stmt).scalar()
+    return issue.address, issue.amount
+
+
 def set_issue_providing(session, issue_index=0, direction=SwapDirection.NO_DIRECTION, providing_status=False):
     stmt = select(Issue).where(and_(Issue.id_in_contract == issue_index,
                                     Issue.direct == direction.value))

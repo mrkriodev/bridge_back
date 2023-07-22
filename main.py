@@ -4,24 +4,40 @@ import time
 from datetime import datetime
 from blockchain.eth_event_handler import eth_event_filters, handle_eth_event, eth_message_queue
 from blockchain.sibr_event_handler import sibr_event_filters, handle_sibr_event, sibr_message_queue
-from blockchain.commands import init_issue_in_msw, provide_issue_in_msw, get_issue_signs_in_blockchain
+from blockchain.commands import init_issue_in_msw, provide_issue_in_msw, get_issue_signs_in_blockchain, mintWrapCoins
 from internal.swap_loader import load_exist_trxs
 from internal.db_manager import get_db_session
 from sqlalchemy.orm import Session
 from internal.crud import get_swap_trx_info, total_swaps, add_new_issue, add_new_swap, \
-    set_issue_providing, is_issue_providing, set_issue_signs, set_issue_status, set_swap_issue, set_swap_hash_to
+    set_issue_providing, is_issue_providing, set_issue_signs, set_issue_status, set_swap_issue, get_issue_adr_amount, \
+    set_swap_hash_to
 from internal.swap_model import SwapDirection
-from blockchain.info import goerli_ms_sc_adr, sibr_ms_sc_adr
+from blockchain.info import goerli_ms_sc_adr, sibr_ms_sc_adr, sibr_weths_sc_adr, goerli_wsibr_adr
 
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 app = FastAPI()
+origins = ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# app = FastAPI()
 swap_trxs = {}
 
 deposit_net_opposite_ms_issuer_sc = {
     SwapDirection.FROM_ETH_TO_SIBR: sibr_ms_sc_adr,
     SwapDirection.FROM_SIBR_TO_ETH: goerli_ms_sc_adr
+}
+
+wrap_coins_opposite_ms_issuer_sc_network = {
+    SwapDirection.FROM_ETH_TO_SIBR: sibr_weths_sc_adr,
+    SwapDirection.FROM_SIBR_TO_ETH: goerli_wsibr_adr
 }
 
 
@@ -34,13 +50,14 @@ def read_queue_messages(message_queue):
         session = next(get_db_session())
         try:
             m_type = message.get('type', '')
-            m_sc_address = message.get('sc_address', '')
+            m_sc_address = str(message.get('sc_address', ''))
             m_direction = SwapDirection.FROM_ETH_TO_SIBR if message_queue == eth_message_queue \
                 else SwapDirection.FROM_SIBR_TO_ETH
             if m_type == 'handle_deposit':
                 trx_deposit_hash = message.get('tx_desposit_hash', '')
-                trx_init_hash = init_issue_in_msw(sc_address=deposit_net_opposite_ms_issuer_sc[m_direction],
-                                                  recepient_adr=message.get('recepient'),
+                trx_init_hash = init_issue_in_msw(sc_address=m_sc_address,
+                                                  # sc_address=deposit_net_opposite_ms_issuer_sc[m_direction],
+                                                  recepient_adr=str(message.get('recepient')),
                                                   amount_wei=int(message.get('amount')))
                 add_new_swap(session, issue_trx_hash=trx_init_hash, hash_from=trx_deposit_hash)
             elif m_type == 'handle_issue_inited':
@@ -73,11 +90,26 @@ def read_queue_messages(message_queue):
             elif m_type == 'handle_issue_provided':
                 m_id_in_contract = int(message.get('issue_index'))
                 set_issue_status(session, issue_index=m_id_in_contract, direction=m_direction, status=True)
-                print(f"providing issue_id = {m_id_in_contract}")
+                print(f"issue_id provided = {m_id_in_contract}")
+                m_recepient, m_amount_wei = get_issue_adr_amount(session,
+                                                                 issue_index=m_id_in_contract, direction=m_direction)
+                # start to mint coins in opposite network
+                # coins should mint only in opposite network.
+                m_trx_mint_hash = mintWrapCoins(sc_address=wrap_coins_opposite_ms_issuer_sc_network[m_direction],
+                                              recepient_adr=m_recepient,
+                                              amount_wei=m_amount_wei,
+                                              issue_index=m_id_in_contract)
+                set_swap_hash_to(session,
+                                 issue_index=m_id_in_contract,
+                                 direction=m_direction,
+                                 hash_to=m_trx_mint_hash)
             elif m_type == 'handle_wrap_coin_minted':
                 m_id_in_contract = int(message.get('issue_index', -1))
                 m_trx_mint_hash = message.get('tx_mint_hash', '')
-                set_swap_hash_to(session, iissue_index=m_id_in_contract, direction=m_direction, hash_to=m_trx_mint_hash)
+                # coins should mint only in opposite network.
+                opposite_direction = SwapDirection.FROM_ETH_TO_SIBR if m_direction == SwapDirection.FROM_SIBR_TO_ETH \
+                    else SwapDirection.FROM_SIBR_TO_ETH
+                print(f"coins minted {m_id_in_contract} in {m_direction.value}")
         finally:
             session.close()
 
