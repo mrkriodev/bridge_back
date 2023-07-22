@@ -1,7 +1,7 @@
 from typing import List
 
 from internal.swap_model import SwapTransaction, Issue, SwapDirection
-from sqlalchemy import select
+from sqlalchemy import select, and_
 import sqlalchemy.exc
 
 
@@ -20,17 +20,15 @@ def total_swaps(session) -> List[int]:
     return swap_trx_ids
 
 
-def add_new_issue(session, address="", amount=0) -> int:
-    issue = Issue(_adr=address, _amount=amount)
+def add_new_issue(session, address="", amount=0, direction=SwapDirection.NO_DIRECTION, id_in_contract=0) -> int:
+    issue = Issue(_adr=address, _amount=amount, _dir=direction, _id_in_contract=id_in_contract)
     session.add(issue)
     session.flush()
     return issue.id
 
 
-def add_new_swap(session, issue_id=0, direction=SwapDirection.NO_DIRECTION, hash_from="", hash_to=""):
-    stmt = select(Issue).where(Issue.id == issue_id)
-    issue: Issue = session.execute(stmt).scalar()
-    st = SwapTransaction(_dir=direction, _issue=issue, _hash_from=hash_from, _hash_to=hash_to)
+def add_new_swap(session, issue_trx_hash="", hash_from=""):
+    st = SwapTransaction(_trx_init_hash=issue_trx_hash, _hash_from=hash_from)
     try:
         session.add(st)
         session.commit()  # сохраняем изменения
@@ -39,30 +37,62 @@ def add_new_swap(session, issue_id=0, direction=SwapDirection.NO_DIRECTION, hash
         session.rollback()
 
 
-def set_issue_signs(session, issue_id=0, signs=0):
-    stmt = select(Issue).where(Issue.id == issue_id)
+def set_swap_issue(session, issue_trx_hash="", issue_id=0):
+    stmt = select(SwapTransaction).where(SwapTransaction.trx_init_hash == issue_trx_hash)
+    st: SwapTransaction = session.execute(stmt).scalar()
+
+    try:
+        st.issue_id = issue_id
+        session.commit()  # сохраняем изменения
+    except sqlalchemy.exc as serr:
+        print(f"in set_swap_issue error={serr}")
+        session.rollback()
+
+
+def set_swap_hash_to(session, issue_index=0, direction=SwapDirection.NO_DIRECTION, hash_to=""):
+    stmt = select(Issue).where(and_(Issue.id_in_contract == issue_index,
+                                    Issue.direct == direction.value))
+    issue: Issue = session.execute(stmt).scalar()
+
+    stmt = select(SwapTransaction).where(SwapTransaction.issue_id == issue.id)
+    st: SwapTransaction = session.execute(stmt).scalar()
+    try:
+        st.hash_to = hash_to
+        session.commit()  # сохраняем изменения
+    except sqlalchemy.exc as serr:
+        print(f"in set_swap_hash_to error={serr}")
+        session.rollback()
+
+
+def set_issue_signs(session, signs=0, issue_index=0, direction=SwapDirection.NO_DIRECTION):
+    stmt = select(Issue).where(and_(Issue.id_in_contract == issue_index,
+                                    Issue.direct == direction.value))
     issue: Issue = session.execute(stmt).scalar()
     try:
         issue.num_signs = signs
         session.commit()  # сохраняем изменения
     except sqlalchemy.exc as serr:
-        print(f"in set_issue_providing error={serr}")
+        print(f"in set_issue_signs error={serr}")
         session.rollback()
 
 
-def set_issue_status(session, issue_id, status=False):
-    stmt = select(Issue).where(Issue.id == issue_id)
+def set_issue_status(session, issue_index=-1, direction=SwapDirection.NO_DIRECTION, status=False):
+    if issue_index == -1:
+        return
+    stmt = select(Issue).where(and_(Issue.id_in_contract == issue_index,
+                                    Issue.direct == direction.value))
     issue: Issue = session.execute(stmt).scalar()
     try:
         issue.status = status
         session.commit()  # сохраняем изменения
     except sqlalchemy.exc as serr:
-        print(f"in set_issue_providing error={serr}")
+        print(f"in set_issue_status error={serr}")
         session.rollback()
 
 
-def set_issue_providing(session, issue_id=0, providing_status=False):
-    stmt = select(Issue).where(Issue.id == issue_id)
+def set_issue_providing(session, issue_index=0, direction=SwapDirection.NO_DIRECTION, providing_status=False):
+    stmt = select(Issue).where(and_(Issue.id_in_contract == issue_index,
+                                    Issue.direct == direction.value))
     issue: Issue = session.execute(stmt).scalar()
     try:
         issue.providing = providing_status
@@ -72,9 +102,10 @@ def set_issue_providing(session, issue_id=0, providing_status=False):
         session.rollback()
 
 
-def is_issue_providing(session, issue_id=0):
+def is_issue_providing(session, issue_index=0, direction=SwapDirection.NO_DIRECTION):
     result = False
-    stmt = select(Issue).where(Issue.id == issue_id)
+    stmt = select(Issue).where(and_(Issue.id_in_contract == issue_index,
+                                    Issue.direct == direction.value))
     issue: Issue = session.execute(stmt).scalar()
     if issue:
         result = issue.providing

@@ -4,19 +4,25 @@ import time
 from datetime import datetime
 from blockchain.eth_event_handler import eth_event_filters, handle_eth_event, eth_message_queue
 from blockchain.sibr_event_handler import sibr_event_filters, handle_sibr_event, sibr_message_queue
-from blockchain.commands import init_issue_in_msw, provide_issue_in_msw, get_issue_signs
+from blockchain.commands import init_issue_in_msw, provide_issue_in_msw, get_issue_signs_in_blockchain
 from internal.swap_loader import load_exist_trxs
 from internal.db_manager import get_db_session
 from sqlalchemy.orm import Session
 from internal.crud import get_swap_trx_info, total_swaps, add_new_issue, add_new_swap, \
-    set_issue_providing, is_issue_providing, set_issue_signs, set_issue_status
+    set_issue_providing, is_issue_providing, set_issue_signs, set_issue_status, set_swap_issue, set_swap_hash_to
 from internal.swap_model import SwapDirection
+from blockchain.info import goerli_ms_sc_adr, sibr_ms_sc_adr
 
 from fastapi import FastAPI, Depends, HTTPException
 import uvicorn
 
 app = FastAPI()
 swap_trxs = {}
+
+deposit_net_opposite_ms_issuer_sc = {
+    SwapDirection.FROM_ETH_TO_SIBR: sibr_ms_sc_adr,
+    SwapDirection.FROM_SIBR_TO_ETH: goerli_ms_sc_adr
+}
 
 
 def read_queue_messages(message_queue):
@@ -25,32 +31,53 @@ def read_queue_messages(message_queue):
         message = message_queue.get()
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"Received message: {message} (Timestamp: {timestamp})")
-        m_type = message.get('type', '')
-        m_sc_address = message.get('sc_address', '')
-        trx_hash = message.get('tx_hash', '')
         session = next(get_db_session())
         try:
+            m_type = message.get('type', '')
+            m_sc_address = message.get('sc_address', '')
+            m_direction = SwapDirection.FROM_ETH_TO_SIBR if message_queue == eth_message_queue \
+                else SwapDirection.FROM_SIBR_TO_ETH
             if m_type == 'handle_deposit':
-                init_issue_in_msw(sc_address=m_sc_address,
-                                 recepient_adr=message.get('recepient'),
-                                 amount_wei=int(message.get('amount')))
-                direction = SwapDirection.FROM_ETH_TO_SIBR if message_queue == eth_message_queue \
-                    else SwapDirection.FROM_SIBR_TO_ETH
-                issue_id = add_new_issue(session, message.get('recepient'), int(message.get('amount')))
-                add_new_swap(session, issue_id, direction, trx_hash)
+                trx_deposit_hash = message.get('tx_desposit_hash', '')
+                trx_init_hash = init_issue_in_msw(sc_address=deposit_net_opposite_ms_issuer_sc[m_direction],
+                                                  recepient_adr=message.get('recepient'),
+                                                  amount_wei=int(message.get('amount')))
+                add_new_swap(session, issue_trx_hash=trx_init_hash, hash_from=trx_deposit_hash)
+            elif m_type == 'handle_issue_inited':
+                trx_init_hash = message.get('tx_init_hash', '')
+                m_issue_id = add_new_issue(session,
+                                           address=message.get('to_address'),
+                                           amount=int(message.get('value')),
+                                           direction=m_direction,
+                                           id_in_contract=int(message.get('issue_index')))
+                set_swap_issue(session, issue_trx_hash=trx_init_hash, issue_id=m_issue_id)
             elif m_type == 'handle_issue_sign':
-                m_issue_id = int(message.get('issue_id', -1))
-                if m_issue_id != -1:
-                    issue_signs = get_issue_signs(sc_address=m_sc_address, issue_id=m_issue_id)
-                    set_issue_signs(session, issue_signs)
-                    if issue_signs >= 2 and not is_issue_providing(session, m_issue_id):
-                        provide_issue_in_msw(sc_address=m_sc_address,
-                                             issue_id=m_issue_id)
-                        set_issue_providing(m_issue_id, True)
+                m_id_in_contract = int(message.get('issue_index'))
+
+                issue_signs = get_issue_signs_in_blockchain(sc_address=m_sc_address,
+                                                            issue_index=m_id_in_contract)
+                set_issue_signs(session,
+                                signs=issue_signs,
+                                issue_index=m_id_in_contract,
+                                direction=m_direction)
+
+                if issue_signs >= 2 and not is_issue_providing(session,
+                                                               issue_index=m_id_in_contract,
+                                                               direction=m_direction):
+                    provide_issue_in_msw(sc_address=m_sc_address,
+                                         issue_index=m_id_in_contract)
+                    set_issue_providing(session,
+                                        issue_index=m_id_in_contract,
+                                        direction=m_direction,
+                                        providing_status=True)
             elif m_type == 'handle_issue_provided':
-                m_issue_id = int(message.get('issue_id', -1))
-                set_issue_status(session, m_issue_id, True)
-                print(f"providing issue_id = {m_issue_id}")
+                m_id_in_contract = int(message.get('issue_index'))
+                set_issue_status(session, issue_index=m_id_in_contract, direction=m_direction, status=True)
+                print(f"providing issue_id = {m_id_in_contract}")
+            elif m_type == 'handle_wrap_coin_minted':
+                m_id_in_contract = int(message.get('issue_index', -1))
+                m_trx_mint_hash = message.get('tx_mint_hash', '')
+                set_swap_hash_to(session, iissue_index=m_id_in_contract, direction=m_direction, hash_to=m_trx_mint_hash)
         finally:
             session.close()
 
@@ -122,7 +149,7 @@ async def get_total_swaps(session: Session = Depends(get_db_session)):
             "ids": swap_txs_ids}
 
 
-@app.get("/api/swaps/")
+@app.get("/api/swaps")
 async def get_swaps(start: int = 0, limit: int = 20, session: Session = Depends(get_db_session)):
     swap_txs_ids = total_swaps(session)
     if swap_txs_ids is None:
