@@ -1,9 +1,14 @@
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 import os
+from dotenv import load_dotenv
 
-path_to_sql_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bridge_records.db')
-engine_db = create_engine(f"sqlite:///{path_to_sql_db}", echo=True)
+if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')):
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+
+#path_to_sql_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bridge_records.db')
+#engine_db = create_engine(f"sqlite:///{path_to_sql_db}", echo=True)
+engine_db = create_engine(f"postgresql+psycopg2://{os.getenv('DB_USER')}:{os.getenv('DB_PASS')}@{os.getenv('DB_HOST')}:5432/bridge")
 DbSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine_db)
 
 
