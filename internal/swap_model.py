@@ -3,7 +3,7 @@ import csv
 import os
 from enum import Enum
 # from json import JSONEncoder
-from sqlalchemy import Column, ForeignKey, Date, Integer, String, SmallInteger, Boolean
+from sqlalchemy import Column, ForeignKey, Date, Integer, String, SmallInteger, Boolean, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
 
 from internal.db_manager import engine_db
@@ -25,7 +25,7 @@ class Issue(Base):
     num_signs = Column(Integer, default=0)
     address = Column(String(64), default="")
     direct = Column(Integer, default=0)
-    amount = Column(Integer, default=0)
+    amount = Column(BigInteger, default=0)
     providing = Column(Boolean, default=False)
     id_in_contract = Column(Integer, default=0)
 
