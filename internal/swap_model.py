@@ -23,7 +23,7 @@ class Issue(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     status = Column(Boolean, default=False)
     num_signs = Column(Integer, default=0)
-    address = Column(String(32), default="")
+    address = Column(String(64), default="")
     direct = Column(Integer, default=0)
     amount = Column(Integer, default=0)
     providing = Column(Boolean, default=False)
