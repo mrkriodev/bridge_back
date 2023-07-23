@@ -64,9 +64,9 @@ class SwapTransaction(Base):
     __tablename__ = 'swap'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    trx_init_hash = Column(String(64), unique=True, default="")
-    hash_from = Column(String(64), default="")
-    hash_to = Column(String(64), default="")
+    trx_init_hash = Column(String(128), unique=True, default="")
+    hash_from = Column(String(128), default="")
+    hash_to = Column(String(128), default="")
     issue_id = Column(Integer, ForeignKey("issue.id"))
 
     def __init__(self, _trx_init_hash="", _hash_from="", _hash_to="", _issue=Issue()):
