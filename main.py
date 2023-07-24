@@ -143,8 +143,8 @@ def test_eth():
 @app.on_event("startup")
 async def startup_event():
     # Start the touch event loop in a separate task
-    asyncio.create_task(eth_events_handler(eth_event_filters, 1))
-    asyncio.create_task(sibr_events_handler(sibr_event_filters, 1))
+    asyncio.create_task(eth_events_handler(eth_event_filters, 3))
+    asyncio.create_task(sibr_events_handler(sibr_event_filters, 3))
 
     # Start a separate thread to read messages from the queue
     queue_thread = threading.Thread(target=read_queue_messages, args=(eth_message_queue,))
