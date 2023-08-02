@@ -1,10 +1,12 @@
+import datetime
 import json
 import csv
 import os
 from enum import Enum
 # from json import JSONEncoder
-from sqlalchemy import Column, ForeignKey, Date, Integer, String, SmallInteger, Boolean, BigInteger
+from sqlalchemy import Column, ForeignKey, DateTime, Integer, String, SmallInteger, Boolean, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.sql import func
 
 from internal.db_manager import engine_db
 
@@ -38,8 +40,8 @@ class Issue(Base):
         self.providing = False
         self.id_in_contract = _id_in_contract
 
-    def to_json(self):
-        return json.dumps(self.__dict__)
+    # def to_json(self):
+    #     return json.dumps(self.__dict__)
 
     def as_array(self):
         return [self.status, self.num_signs, self.address, self.amount, self.direct]
@@ -51,7 +53,7 @@ class Issue(Base):
         return {'status': self.status,
                 'num_signs': self.num_signs,
                 'address': self.address,
-                'amount': self.amount,
+                'amount': round(float(self.amount)/10**18, 8),
                 'direction': self.direct}
 
     def to_csv(self, filename):
@@ -68,6 +70,7 @@ class SwapTransaction(Base):
     hash_from = Column(String(128), default="")
     hash_to = Column(String(128), default="")
     issue_id = Column(Integer, ForeignKey("issue.id"))
+    dt = Column(DateTime(timezone=True), default=func.now())
 
     def __init__(self, _trx_init_hash="", _hash_from="", _hash_to="", _issue=Issue()):
         self.hash_from = _hash_from
@@ -75,6 +78,7 @@ class SwapTransaction(Base):
         self.trx_init_hash = _trx_init_hash
         self.issue: Issue = _issue
         self.issue_id: int = _issue.id
+        self.dt: datetime.datetime = datetime.datetime.now()
 
     def as_array(self):
         return [self.id, self.hash_from, self.hash_to]
@@ -103,7 +107,8 @@ class SwapTransaction(Base):
     def to_json(self):
         as_dict = {'id': self.id,
                    'hash_to': self.hash_to,
-                   'hash_from': self.hash_from}
+                   'hash_from': self.hash_from,
+                   'dt': self.dt.isoformat()}
         as_dict.update(self.issue.to_json())
         return as_dict
 

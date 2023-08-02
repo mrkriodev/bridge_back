@@ -55,11 +55,23 @@ def read_queue_messages(message_queue):
                 else SwapDirection.FROM_SIBR_TO_ETH
             if m_type == 'handle_deposit':
                 trx_deposit_hash = message.get('tx_desposit_hash', '')
-                trx_init_hash = init_issue_in_msw(sc_address=m_sc_address,
-                                                  # sc_address=deposit_net_opposite_ms_issuer_sc[m_direction],
-                                                  recepient_adr=str(message.get('recepient')),
-                                                  amount_wei=int(message.get('amount')))
-                add_new_swap(session, issue_trx_hash=trx_init_hash, hash_from=trx_deposit_hash)
+                while True:
+                    try:
+                        trx_init_hash = init_issue_in_msw(sc_address=m_sc_address,
+                                                          # sc_address=deposit_net_opposite_ms_issuer_sc[m_direction],
+                                                          recepient_adr=str(message.get('recepient')),
+                                                          amount_wei=int(message.get('amount')))
+                        add_new_swap(session, issue_trx_hash=trx_init_hash, hash_from=trx_deposit_hash)
+                        break
+                    except ValueError as excp:
+                        if isinstance(excp, dict):
+                            resp_code = excp.get("code")
+                            print(f"error={resp_code}")
+                            if resp_code == -32000:
+                                message = excp.get("message", "")
+                                if message == 'replacement transaction underpriced':
+                                    time.sleep(3)
+                                    continue
             elif m_type == 'handle_issue_inited':
                 trx_init_hash = message.get('tx_init_hash', '')
                 m_issue_id = add_new_issue(session,
@@ -81,14 +93,27 @@ def read_queue_messages(message_queue):
                 if issue_signs >= 2 and not is_issue_providing(session,
                                                                issue_index=m_id_in_contract,
                                                                direction=m_direction):
-                    provide_issue_in_msw(sc_address=m_sc_address,
-                                         issue_index=m_id_in_contract)
-                    set_issue_providing(session,
-                                        issue_index=m_id_in_contract,
-                                        direction=m_direction,
-                                        providing_status=True)
+                    while True:
+                        try:
+                            provide_issue_in_msw(sc_address=m_sc_address,
+                                                 issue_index=m_id_in_contract)
+                            set_issue_providing(session,
+                                                issue_index=m_id_in_contract,
+                                                direction=m_direction,
+                                                providing_status=True)
+                            break
+                        except ValueError as excp:
+                            if isinstance(excp, dict):
+                                resp_code = excp.get("code")
+                                print(f"error={resp_code}")
+                                if resp_code == -32000:
+                                    message = excp.get("message", "")
+                                    if message == 'replacement transaction underpriced':
+                                        time.sleep(3)
+                                        continue
             elif m_type == 'handle_issue_provided':
                 m_id_in_contract = int(message.get('issue_index'))
+
                 set_issue_status(session, issue_index=m_id_in_contract, direction=m_direction, status=True)
                 print(f"issue_id provided = {m_id_in_contract}")
                 m_recepient, m_amount_wei = get_issue_adr_amount(session,
@@ -194,7 +219,7 @@ async def get_swaps(start: int = 0, limit: int = 20, session: Session = Depends(
 
 
 def main():
-    load_exist_trxs(swap_trxs)
+    #load_exist_trxs(swap_trxs)
     uvicorn.run(app, host="0.0.0.0", port=8080)
 
 
