@@ -1,7 +1,6 @@
 import datetime
 import json
 import csv
-import os
 from enum import Enum
 # from json import JSONEncoder
 from sqlalchemy import Column, ForeignKey, DateTime, Integer, String, SmallInteger, Boolean, BigInteger
@@ -9,6 +8,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 
 from internal.db_manager import engine_db
+
+moscow_timezone = datetime.timezone(datetime.timedelta(hours=3))
 
 Base = declarative_base()
 
@@ -108,7 +109,7 @@ class SwapTransaction(Base):
         as_dict = {'id': self.id,
                    'hash_to': self.hash_to,
                    'hash_from': self.hash_from,
-                   'dt': self.dt.isoformat()}
+                   'date': self.dt.astimezone(moscow_timezone).strftime('%Y-%m-%d (%H:%M:%S)')}
         as_dict.update(self.issue.to_json())
         return as_dict
 
