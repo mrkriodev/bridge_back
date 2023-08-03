@@ -21,22 +21,28 @@ def standard_trx_build_for_sc_call_with_gas(base_adr, provider_url: str) -> dict
     # build_trx_config['gas'] = gas + int(gas * 0.2)
     # build_trx_config['gasPrice'] += int(build_trx_config['gasPrice'] * 0.2)
 
-    base_fee = web3.eth.get_block('latest').baseFeePerGas
-    priority_fee = web3.eth.max_priority_fee
-    max_fee = priority_fee + 2 * base_fee
-
     build_trx_config = {
         'chainId': web3.eth.chain_id,
         'from': base_adr,
         'nonce': web3.eth.get_transaction_count(base_adr),
         # 'gasPrice': web3.eth.gas_price,
-        'maxFeePerGas': max_fee,  # 30000000000,
-        'maxPriorityFeePerGas': priority_fee  # 3000000000,
+        #'maxFeePerGas': max_fee,  # 30000000000,
+        #'maxPriorityFeePerGas': priority_fee  # 3000000000,
     }
 
-    gas_eddition = 1000
     if provider_url.find("infura") != -1:
-        gas_eddition = 1000
+        base_fee = web3.eth.get_block('latest').baseFeePerGas
+        priority_fee = web3.eth.max_priority_fee
+        max_fee = priority_fee + 2 * base_fee
+
+        build_trx_config['maxFeePerGas'] = max_fee
+        build_trx_config['maxPriorityFeePerGas'] = priority_fee
+    else:
+        build_trx_config['gasPrice'] = web3.eth.gas_price
+
+    gas_eddition = 1000
+    #if provider_url.find("infura") != -1:
+    #    gas_eddition = 1000
     gas = web3.eth.estimate_gas(build_trx_config) + gas_eddition
     build_trx_config['gas'] = gas + int(gas * 0.1)
 
