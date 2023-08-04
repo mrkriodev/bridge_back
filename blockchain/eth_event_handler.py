@@ -13,6 +13,7 @@ eth_event_filters = (eth_ms_contract.events.Deposit.create_filter(fromBlock='lat
                      eth_ms_contract.events.IssueInited.create_filter(fromBlock='latest'),
                      eth_ms_contract.events.IssueSigned.create_filter(fromBlock='latest'),
                      eth_ms_contract.events.IssueProvided.create_filter(fromBlock='latest'),
+                     #eth_ms_contract.events.WrapTokensReceived.create_filter(fromBlock='latest'),
                      eth_wsibr_contract.events.Minted.create_filter(fromBlock='latest')
                      )  #
 

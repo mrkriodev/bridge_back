@@ -4,7 +4,8 @@ import time
 from datetime import datetime
 from blockchain.eth_event_handler import eth_event_filters, handle_eth_event, eth_message_queue
 from blockchain.sibr_event_handler import sibr_event_filters, handle_sibr_event, sibr_message_queue
-from blockchain.commands import init_issue_in_msw, provide_issue_in_msw, get_issue_signs_in_blockchain, mintWrapCoins
+from blockchain.commands import init_issue_in_msw, provide_issue_in_msw, get_issue_signs_in_blockchain, mintWrapCoins, \
+    submitRevertTransaction, get_trx_confirms_in_blockchain, execute_trx_in_msw, send_faucet_coins
 from internal.swap_loader import load_exist_trxs
 from internal.db_manager import get_db_session
 from sqlalchemy.orm import Session
@@ -12,9 +13,11 @@ from internal.crud import get_swap_trx_info, total_swaps, add_new_issue, add_new
     set_issue_providing, is_issue_providing, set_issue_signs, set_issue_status, set_swap_issue, get_issue_adr_amount, \
     set_swap_hash_to
 from internal.swap_model import SwapDirection
-from blockchain.info import goerli_ms_sc_adr, sibr_ms_sc_adr, sibr_weths_sc_adr, goerli_wsibr_adr
+from blockchain.info import goerli_ms_sc_adr, sibr_ms_sc_adr, sibr_weths_sc_adr, goerli_wsibr_adr, \
+    goerl_fuacet_guids, sibr_fuacet_guids, goerli_faucet_adr, sibr_faucet_adr
 
 from fastapi import FastAPI, Depends, HTTPException
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -135,6 +138,33 @@ def read_queue_messages(message_queue):
                 opposite_direction = SwapDirection.FROM_ETH_TO_SIBR if m_direction == SwapDirection.FROM_SIBR_TO_ETH \
                     else SwapDirection.FROM_SIBR_TO_ETH
                 print(f"coins minted {m_id_in_contract} in {m_direction.value}")
+            elif m_type == 'handle_wrap_coins_reverted':
+                # start to mint coins in opposite network
+                # coins should mint only in opposite network.
+                m_recepient = message.get('recepient')
+                m_amount_wei = message.get('amount')
+                submitRevertTransaction(sc_address=deposit_net_opposite_ms_issuer_sc[m_direction],
+                                        recepient_adr=m_recepient,
+                                        amount_wei=m_amount_wei)
+            elif m_type == 'handle_transaction_confirm':
+                m_trx_id_in_contract = int(message.get('trx_index'))
+                trx_confirms = get_trx_confirms_in_blockchain(sc_address=m_sc_address,
+                                                              trx_index=m_trx_id_in_contract)
+                if trx_confirms >= 2:
+                    while True:
+                        try:
+                            execute_trx_in_msw(sc_address=m_sc_address,
+                                               trx_index=m_id_in_contract)
+                            break
+                        except ValueError as excp:
+                            if isinstance(excp, dict):
+                                resp_code = excp.get("code")
+                                print(f"error={resp_code}")
+                                if resp_code == -32000:
+                                    message = excp.get("message", "")
+                                    if message == 'replacement transaction underpriced':
+                                        time.sleep(3)
+                                        continue
         finally:
             session.close()
 
@@ -187,14 +217,6 @@ async def get_status(swap_tx_id: int = None, session: Session = Depends(get_db_s
     if swap_tx_info is None:
         raise HTTPException(status_code=404, detail="TX not found")
     return swap_tx_info
-    # return {"id": swap_tx_info.get('id'),
-    #         "status": swap_tx_info.get('status'),
-    #         "signs": int(swap_tx_info.get('num_signs')),
-    #         "direction": int(swap_tx_info.get('direction')),
-    #         "amount": int(swap_tx_info.get('amount')),
-    #         "address": swap_tx_info.get('address'),
-    #         "hash_to": swap_tx_info.get('hash_to'),
-    #         "hash_from": swap_tx_info.get('hash_from')}
 
 
 @app.get("/api/total")
@@ -216,6 +238,22 @@ async def get_swaps(start: int = 0, limit: int = 20, session: Session = Depends(
         swap_tx_info = get_swap_trx_info(session, swap_tx_id)
         result.append(swap_tx_info)
     return result
+
+
+# Pydantic model to validate the JSON schema
+class FaucetRequest(BaseModel):
+    address: str
+
+
+@app.post("/api/faucet/{guid}")
+async def to_faucet_coins(guid: str, request_data: FaucetRequest):
+    if guid is None:
+        raise HTTPException(status_code=404, detail="error")
+    if guid in sibr_fuacet_guids:
+        send_faucet_coins(sibr_faucet_adr, request_data.address)
+    elif guid in goerl_fuacet_guids:
+        send_faucet_coins(goerli_faucet_adr, request_data.address)
+    return {'sended': 1}
 
 
 def main():

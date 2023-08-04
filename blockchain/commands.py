@@ -88,6 +88,19 @@ def get_issue_signs_in_blockchain(sc_address, issue_index):
     return int(issue_info[3])
 
 
+def get_trx_confirms_in_blockchain(sc_address, trx_index):
+    if sc_address is None:
+        return
+    provider_url = provider_of_sc[sc_address]
+    sc_abi = abi_of_sc[sc_address]
+
+    web3 = Web3(Web3.HTTPProvider(provider_url, request_kwargs={'timeout': 60}))
+    contract = web3.eth.contract(address=web3.to_checksum_address(sc_address), abi=sc_abi)
+
+    issue_info = contract.functions.getTransaction(trx_index).call()
+    return int(issue_info[4])
+
+
 def provide_issue_in_msw(provider_adr=first_adr,
                          provider_adr_pk=first_adr_pk,
                          sc_address=None,
@@ -138,6 +151,75 @@ def mintWrapCoins(provider_adr=first_adr,
     #print(tx_receipt)
 
 
+def submitRevertTransaction(provider_adr=first_adr,
+                            provider_adr_pk=first_adr_pk,
+                            recepient_adr: str=first_adr,
+                            amount_wei: int=10000,
+                            sc_address=None):
+    if sc_address is None:
+        return
+    provider_url = provider_of_sc[sc_address]
+    sc_abi = abi_of_sc[sc_address]
+
+    web3 = Web3(Web3.HTTPProvider(provider_url, request_kwargs={'timeout': 60}))
+    contract = web3.eth.contract(address=web3.to_checksum_address(sc_address), abi=sc_abi)
+    build_trx_config = standard_trx_build_for_sc_call_with_gas(provider_adr, provider_url)
+    build_trx_config['gas'] *= 2
+
+    f = contract.functions.submitTransaction(web3.to_checksum_address(recepient_adr), amount_wei, bytearray())
+    unsigned_tx = f.build_transaction(build_trx_config)
+    signed_tx = web3.eth.account.sign_transaction(unsigned_tx, provider_adr_pk)
+    tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+    return tx_hash.hex()
+
+
+def execute_trx_in_msw(provider_adr=first_adr,
+                       provider_adr_pk=first_adr_pk,
+                       sc_address=None,
+                       trx_index=0):
+    if sc_address is None:
+        return
+    provider_url = provider_of_sc[sc_address]
+    sc_abi = abi_of_sc[sc_address]
+
+    web3 = Web3(Web3.HTTPProvider(provider_url, request_kwargs={'timeout': 60}))
+    contract = web3.eth.contract(address=web3.to_checksum_address(sc_address), abi=sc_abi)
+    build_trx_config = standard_trx_build_for_sc_call_with_gas(provider_adr, provider_url)
+    build_trx_config['gas'] *= 2
+
+    try:
+        f = contract.functions.executeTransaction(trx_index)
+        unsigned_tx = f.build_transaction(build_trx_config)
+        signed_tx = web3.eth.account.sign_transaction(unsigned_tx, provider_adr_pk)
+        tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+    except Exception as excp:
+        print(f"execute_trx_in_msw error = {excp}")
+        return None
+    return tx_hash.hex()
+
+
+def send_faucet_coins(sc_address=None, recepient: str=None):
+    if sc_address is None:
+        return
+    provider_url = provider_of_sc[sc_address]
+    sc_abi = abi_of_sc[sc_address]
+
+    web3 = Web3(Web3.HTTPProvider(provider_url, request_kwargs={'timeout': 60}))
+    contract = web3.eth.contract(address=web3.to_checksum_address(sc_address), abi=sc_abi)
+    build_trx_config = standard_trx_build_for_sc_call_with_gas(first_adr, provider_url)
+    build_trx_config['gas'] *= 2
+    try:
+        f = contract.functions.requestTokens(web3.to_checksum_address(recepient))
+        unsigned_tx = f.build_transaction(build_trx_config)
+        signed_tx = web3.eth.account.sign_transaction(unsigned_tx, first_adr_pk)
+        tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+    except Exception as excp:
+        print(f"execute_trx_in_msw error = {excp}")
+        return None
+    return tx_hash.hex()
+
+
+
 def handle_contract_event(event, message_queue):
     print(f"handled event={event}")
     event_log_receipt: LogReceipt = event
@@ -184,3 +266,10 @@ def handle_contract_event(event, message_queue):
              'sc_address': address_of_sc,
              'tx_mint_hash': HexBytes(event_log_receipt.get('transactionHash', '0x0000')).hex(),
              'issue_index': issue_index})
+    elif event_type == 'WrapTokensReceived':
+        # need start transaction in other network
+        message_queue.put(
+            {'type': 'handle_wrap_coins_reverted',
+             'sc_address': address_of_sc,
+             'recepient': event_log_receipt.get('args').get('from'),
+             'amount': event_log_receipt.get('args').get('amount')})
