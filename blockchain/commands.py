@@ -1,5 +1,5 @@
 from web3 import Web3
-from blockchain.info import first_adr, first_adr_pk, provider_of_sc, abi_of_sc
+from blockchain.info import first_adr, first_adr_pk, provider_of_sc, abi_of_sc, infura_goerli_url, sibr_net_url
 from web3.types import LogReceipt, HexBytes, TxReceipt
 
 
@@ -218,6 +218,37 @@ def send_faucet_coins(sc_address=None, recepient: str=None):
         return None
     return tx_hash.hex()
 
+
+def simple_send_coins_in_eth(recepient: str):
+    provider_url = infura_goerli_url
+    web3 = Web3(Web3.HTTPProvider(provider_url, request_kwargs={'timeout': 60}))
+
+    base_fee = web3.eth.get_block('latest').baseFeePerGas
+    priority_fee = web3.eth.max_priority_fee
+    max_fee = priority_fee + 1000
+
+    build_trx_config = {
+        'chainId': web3.eth.chain_id,
+        'from': web3.to_checksum_address(first_adr),
+        'nonce': web3.eth.get_transaction_count(web3.to_checksum_address(first_adr)),
+        'maxFeePerGas': max_fee,  # 30000000000,
+        'maxPriorityFeePerGas': priority_fee  # 3000000000,
+    }
+    build_trx_config['gas'] = web3.eth.estimate_gas(build_trx_config)
+    try:
+        build_trx_config['to'] = web3.to_checksum_address(recepient)
+        build_trx_config['value'] = web3.to_wei(0.001, 'ether')
+
+        signed_tx = web3.eth.account.sign_transaction(build_trx_config, first_adr_pk)
+        tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        print(f"simple_send_coins_in_eth {tx_hash.hex()}")
+        # Wait for the transaction to be mined, and get the transaction receipt
+        #tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
+        #print(tx_receipt)
+    except Exception as excp:
+        print(f"simple_send_coins_in_eth error = {excp}")
+        return None
+    return tx_hash.hex()
 
 
 def handle_contract_event(event, message_queue):

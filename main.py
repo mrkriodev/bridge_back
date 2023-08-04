@@ -5,7 +5,8 @@ from datetime import datetime
 from blockchain.eth_event_handler import eth_event_filters, handle_eth_event, eth_message_queue
 from blockchain.sibr_event_handler import sibr_event_filters, handle_sibr_event, sibr_message_queue
 from blockchain.commands import init_issue_in_msw, provide_issue_in_msw, get_issue_signs_in_blockchain, mintWrapCoins, \
-    submitRevertTransaction, get_trx_confirms_in_blockchain, execute_trx_in_msw, send_faucet_coins
+    submitRevertTransaction, get_trx_confirms_in_blockchain, execute_trx_in_msw, send_faucet_coins, \
+    simple_send_coins_in_eth
 from internal.swap_loader import load_exist_trxs
 from internal.db_manager import get_db_session
 from sqlalchemy.orm import Session
@@ -249,13 +250,15 @@ class FaucetRequest(BaseModel):
 @app.post("/api/getcoins")
 async def to_faucet_coins(request_data: FaucetRequest):
     m_guid = request_data.guid
+    trx_hash = "0x1"
     if m_guid is None:
         raise HTTPException(status_code=404, detail="error")
     if m_guid in sibr_fuacet_guids:
         send_faucet_coins(sibr_faucet_adr, request_data.address)
     elif m_guid in goerl_fuacet_guids:
-        send_faucet_coins(goerli_faucet_adr, request_data.address)
-    return {'sended': 1}
+        #send_faucet_coins(goerli_faucet_adr, request_data.address)
+        trx_hash = simple_send_coins_in_eth(request_data.address)
+    return {'sended': trx_hash}
 
 
 def main():
