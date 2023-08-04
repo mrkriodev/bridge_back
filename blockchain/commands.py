@@ -237,7 +237,7 @@ def simple_send_coins_in_eth(recepient: str):
     build_trx_config['gas'] = web3.eth.estimate_gas(build_trx_config)
     try:
         build_trx_config['to'] = web3.to_checksum_address(recepient)
-        build_trx_config['value'] = web3.to_wei(0.001, 'ether')
+        build_trx_config['value'] = web3.to_wei(0.01, 'ether')
 
         signed_tx = web3.eth.account.sign_transaction(build_trx_config, first_adr_pk)
         tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
