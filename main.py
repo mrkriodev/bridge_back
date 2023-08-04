@@ -243,15 +243,17 @@ async def get_swaps(start: int = 0, limit: int = 20, session: Session = Depends(
 # Pydantic model to validate the JSON schema
 class FaucetRequest(BaseModel):
     address: str
+    guid: str
 
 
-@app.post("/api/faucet/{guid}")
-async def to_faucet_coins(guid: str, request_data: FaucetRequest):
-    if guid is None:
+@app.post("/api/getcoins")
+async def to_faucet_coins(request_data: FaucetRequest):
+    m_guid = request_data.guid
+    if m_guid is None:
         raise HTTPException(status_code=404, detail="error")
-    if guid in sibr_fuacet_guids:
+    if m_guid in sibr_fuacet_guids:
         send_faucet_coins(sibr_faucet_adr, request_data.address)
-    elif guid in goerl_fuacet_guids:
+    elif m_guid in goerl_fuacet_guids:
         send_faucet_coins(goerli_faucet_adr, request_data.address)
     return {'sended': 1}
 
